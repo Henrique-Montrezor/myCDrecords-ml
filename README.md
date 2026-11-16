@@ -1,4 +1,60 @@
-# Laboratório de recomendações PyTorch
+# Recomendações PyTorch
+
+## Modelo experimental servindo o feed
+
+`mycdrecords_ml.serving` treina BPR/PyTorch em CPU com **24 perfis fictícios e
+72 interações simuladas entre 24 artistas**. São afinidades de autoria própria,
+não histórico de ouvintes, tags ou estatísticas de fãs. Nenhuma conta/review falsa
+é inserida no MySQL. Este fluxo não lê `.env`, usuários ou provedores.
+
+O artefato versionado [artist-bpr-v1.json](models/artist-bpr-v1.json) contém apenas
+vetores de artistas (4 dimensões), protocolo, métricas e uma prova de paridade.
+Não contém embeddings de usuários. A API inclui uma cópia e executa inferência
+Node sem depender de Python no servidor HTTP.
+
+Para retreinar e publicar as duas cópias, com os repositórios como pastas irmãs:
+
+```powershell
+.\.venv\Scripts\python.exe -m mycdrecords_ml.serving --output .\models\artist-bpr-v1.json --output ..\myCDrecords-API\src\modules\recommendations\models\artist-bpr-v1.json
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+```
+
+Resultado verificado: 200 épocas, seed 42, perda **0,69207 → 0,03232**.
+Validação: 36 perfis novos com dois artistas observados; teste: 24 perfis novos com
+um artista observado, diferentes dos três positivos por perfil de treino.
+Recall@3 multi-alvo **1,0**, contra **0,16667** da popularidade empatada por índice.
+O corte de afinidade 0,35 também é aplicado na avaliação. Todos compartilham os
+mesmos blocos fictícios: **isto testa generalização mecânica do fold-in, não
+relevância para pessoas reais**. Não houve ajuste de épocas pelo teste.
+
+Na API, executar `npm run ml:catalog:seed` e `npm run ml:catalog:verify`.
+O bootstrap consulta o browse oficial MusicBrainz com MBIDs independentes
+referenciados por Wikidata/P434, valida créditos exatos e guarda somente campos
+core/CC0. Não depende da busca textual, que retornou 503 nesta homologação;
+respeita o cliente existente de fila/backoff. Registros existentes não são
+sobrescritos. Foram consultados **244 álbuns** no MySQL; dois perfis fictícios
+produziram rankings diferentes de 10 itens cada, inclusive pelo build compilado.
+
+No aplicativo, abrir `http://localhost:5173/recommendations?engine=ml`,
+selecionar artistas suportados em **Ajuste seu gosto**, adicionar e salvar.
+O seletor não depende de busca externa. O link **Ver minhas sugestões ML no feed**
+abre `http://localhost:5173/?engine=ml`.
+
+- Escolha explícita na URL; reload/voltar preservam o modo, navegação sem o parâmetro volta ao motor original.
+- Inferência privada somente com notas/favoritos próprios ligados ao catálogo MusicBrainz e artistas escolhidos. Nota explícita prevalece sobre favorito; 3 é neutra, 1/2 afastam.
+- Sem tags, gêneros associados, texto, capas, terceiros ou Spotify nas features ML; nomes exatos, sem aliases.
+- Vetor do perfil e ranking ML não são persistidos ou cacheados. Não retreina com o perfil real.
+- Afinidade mínima 0,35 e até dois álbuns por artista; avaliados/favoritos/dispensados ficam de fora.
+- Falta de sinais/candidatos informa fallback ao motor original. Falha de artefato, checksum, paridade ou leitura retorna erro, não fallback disfarçado.
+- O piloto de coleta consentida abaixo continua separado; seus pesos reais não foram publicados.
+
+Verificação do incremento: **23 testes Python**, **385 testes API** (8 legados
+ignorados), **132 testes client**, tipos/lint/build aprovados. UI conferida em
+Edge headless isolado com APIs fictícias, preview de produção em localhost:4173:
+375px/1280px sem overflow, alvo 44px, foco/ativação por teclado, feed, loading,
+vazio, fallback, erro/retry e anônimo. Nenhuma conta real foi lida pelo navegador.
+
+## Laboratório separado
 
 O laboratório visual continua **somente sintético e de desenvolvimento** do [roadmap ML](../ML-ROADMAP.md). Treina embeddings reais com BPR em CPU, salva pesos e publica um snapshot que pode ser inspecionado na aplicação React. O treino privado real tem entrada separada, descrita abaixo.
 
